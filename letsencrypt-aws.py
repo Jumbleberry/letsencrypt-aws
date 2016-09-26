@@ -70,36 +70,43 @@ class CertificateRequest(object):
 
 
 class ELBCertificate(object):
-    def __init__(self, elb_client, iam_client, elb_name, elb_port):
+    def __init__(self, elb_client, iam_client, elb_arn, elb_port):
         self.elb_client = elb_client
         self.iam_client = iam_client
-        self.elb_name = elb_name
+        self.elb_arn = elb_arn
         self.elb_port = elb_port
+        self.elb_listener_arn = None
 
     def get_current_certificate(self):
-        response = self.elb_client.describe_load_balancers(
-            LoadBalancerNames=[self.elb_name]
+        response = self.elb_client.describe_listeners(
+            LoadBalancerArn=[self.elb_arn]
         )
-        [description] = response["LoadBalancerDescriptions"]
-        [elb_listener] = [
-            listener["Listener"]
-            for listener in description["ListenerDescriptions"]
-            if listener["Listener"]["LoadBalancerPort"] == self.elb_port
+        [elb_certificates] = [
+            listener["Certificates"]
+            for listener in response["Listeners"]
+            if listener["Port"] == self.elb_port
         ]
+        elb_certificates = []
+        for listener in response["Listeners"]:
+            if listener["Port"] == self.elb_port:
+                elb_certificates = listener["Certificates"]
+                self.elb_listener_arn = listener["ListenerArn"]
 
-        if "SSLCertificateId" not in elb_listener:
-            raise ValueError(
-                "A certificate must already be configured for the ELB"
-            )
+        for elb_certificate in elb_certificates:
+            if "CertificateArn" not in elb_certificate:
+                raise ValueError(
+                    "A certificate must already be configured for the ELB"
+                )
 
+        # Assume we want the first one
         return _get_iam_certificate(
-            self.iam_client, elb_listener["SSLCertificateId"]
+            self.iam_client, elb_certificates[0]["CertificateArn"]
         )
 
     def update_certificate(self, logger, hosts, private_key, pem_certificate,
                            pem_certificate_chain):
         logger.emit(
-            "updating-elb.upload-iam-certificate", elb_name=self.elb_name
+            "updating-elb.upload-iam-certificate", elb_arn=self.elb_arn
         )
 
         response = self.iam_client.upload_server_certificate(
@@ -122,11 +129,11 @@ class ELBCertificate(object):
         # Sleep before trying to set the certificate, it appears to sometimes
         # fail without this.
         time.sleep(15)
-        logger.emit("updating-elb.set-elb-certificate", elb_name=self.elb_name)
-        self.elb_client.set_load_balancer_listener_ssl_certificate(
-            LoadBalancerName=self.elb_name,
-            SSLCertificateId=new_cert_arn,
-            LoadBalancerPort=self.elb_port,
+        logger.emit("updating-elb.set-elb-certificate", elb_arn=self.elb_arn)
+        self.elb_client.modify_listener(
+            ListenerArn=self.elb_listener_arn,
+            Port=self.elb_port,
+            Certificates=[{'CertificateArn': new_cert_arn}],
         )
 
 
@@ -262,9 +269,9 @@ class AuthorizationRecord(object):
 
 
 def start_dns_challenge(logger, acme_client, dns_challenge_completer,
-                        elb_name, host):
+                        elb_arn, host):
     logger.emit(
-        "updating-elb.request-acme-challenge", elb_name=elb_name, host=host
+        "updating-elb.request-acme-challenge", elb_arn=elb_arn, host=host
     )
     authz = acme_client.request_domain_challenges(
         host, acme_client.directory.new_authz
@@ -273,7 +280,7 @@ def start_dns_challenge(logger, acme_client, dns_challenge_completer,
     [dns_challenge] = find_dns_challenge(authz)
 
     logger.emit(
-        "updating-elb.create-txt-record", elb_name=elb_name, host=host
+        "updating-elb.create-txt-record", elb_arn=elb_arn, host=host
     )
     change_id = dns_challenge_completer.create_txt_record(
         dns_challenge.validation_domain_name(host),
@@ -289,10 +296,10 @@ def start_dns_challenge(logger, acme_client, dns_challenge_completer,
 
 
 def complete_dns_challenge(logger, acme_client, dns_challenge_completer,
-                           elb_name, authz_record):
+                           elb_arn, authz_record):
     logger.emit(
         "updating-elb.wait-for-route53",
-        elb_name=elb_name, host=authz_record.host
+        elb_arn=elb_arn, host=authz_record.host
     )
     dns_challenge_completer.wait_for_change(authz_record.change_id)
 
@@ -300,7 +307,7 @@ def complete_dns_challenge(logger, acme_client, dns_challenge_completer,
 
     logger.emit(
         "updating-elb.local-validation",
-        elb_name=elb_name, host=authz_record.host
+        elb_arn=elb_arn, host=authz_record.host
     )
     verified = response.simple_verify(
         authz_record.dns_challenge.chall,
@@ -312,13 +319,13 @@ def complete_dns_challenge(logger, acme_client, dns_challenge_completer,
 
     logger.emit(
         "updating-elb.answer-challenge",
-        elb_name=elb_name, host=authz_record.host
+        elb_arn=elb_arn, host=authz_record.host
     )
     acme_client.answer_challenge(authz_record.dns_challenge, response)
 
 
-def request_certificate(logger, acme_client, elb_name, authorizations, csr):
-    logger.emit("updating-elb.request-cert", elb_name=elb_name)
+def request_certificate(logger, acme_client, elb_arn, authorizations, csr):
+    logger.emit("updating-elb.request-cert", elb_arn=elb_arn)
     cert_response, _ = acme_client.poll_and_request_issuance(
         acme.jose.util.ComparableX509(
             OpenSSL.crypto.load_certificate_request(
@@ -339,13 +346,13 @@ def request_certificate(logger, acme_client, elb_name, authorizations, csr):
 
 
 def update_cert(logger, acme_client, force_issue, cert_request):
-    logger.emit("updating-elb", elb_name=cert_request.cert_location.elb_name)
+    logger.emit("updating-elb", elb_arn=cert_request.cert_location.elb_arn)
 
     current_cert = cert_request.cert_location.get_current_certificate()
     if current_cert is not None:
         logger.emit(
             "updating-elb.certificate-expiration",
-            elb_name=cert_request.cert_location.elb_name,
+            elb_arn=cert_request.cert_location.elb_arn,
             expiration_date=current_cert.not_valid_after
         )
         days_until_expiration = (
@@ -389,18 +396,18 @@ def update_cert(logger, acme_client, force_issue, cert_request):
         for host in cert_request.hosts:
             authz_record = start_dns_challenge(
                 logger, acme_client, cert_request.dns_challenge_completer,
-                cert_request.cert_location.elb_name, host,
+                cert_request.cert_location.elb_arn, host,
             )
             authorizations.append(authz_record)
 
         for authz_record in authorizations:
             complete_dns_challenge(
                 logger, acme_client, cert_request.dns_challenge_completer,
-                cert_request.cert_location.elb_name, authz_record
+                cert_request.cert_location.elb_arn, authz_record
             )
 
         pem_certificate, pem_certificate_chain = request_certificate(
-            logger, acme_client, cert_request.cert_location.elb_name,
+            logger, acme_client, cert_request.cert_location.elb_arn,
             authorizations, csr
         )
 
@@ -412,7 +419,7 @@ def update_cert(logger, acme_client, force_issue, cert_request):
         for authz_record in authorizations:
             logger.emit(
                 "updating-elb.delete-txt-record",
-                elb_name=cert_request.cert_location.elb_name,
+                elb_arn=cert_request.cert_location.elb_arn,
                 host=authz_record.host
             )
             dns_challenge = authz_record.dns_challenge
@@ -490,7 +497,7 @@ def update_certificates(persistent=False, force_issue=False):
 
     session = boto3.Session()
     s3_client = session.client("s3")
-    elb_client = session.client("elb")
+    elb_client = session.client("elbv2")
     route53_client = session.client("route53")
     iam_client = session.client("iam")
 
@@ -509,7 +516,7 @@ def update_certificates(persistent=False, force_issue=False):
         if "elb" in domain:
             cert_location = ELBCertificate(
                 elb_client, iam_client,
-                domain["elb"]["name"], int(domain["elb"].get("port", 443))
+                domain["elb"]["arn"], int(domain["elb"].get("port", 443))
             )
         else:
             raise ValueError(
