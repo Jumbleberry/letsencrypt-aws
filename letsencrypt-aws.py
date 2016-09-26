@@ -132,7 +132,6 @@ class ELBCertificate(object):
         logger.emit("updating-elb.set-elb-certificate", elb_arn=self.elb_arn)
         self.elb_client.modify_listener(
             ListenerArn=self.elb_listener_arn,
-            Port=self.elb_port,
             Certificates=[{'CertificateArn': new_cert_arn}],
         )
 
