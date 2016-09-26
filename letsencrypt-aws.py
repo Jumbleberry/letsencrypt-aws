@@ -79,7 +79,7 @@ class ELBCertificate(object):
 
     def get_current_certificate(self):
         response = self.elb_client.describe_listeners(
-            LoadBalancerArn=[self.elb_arn]
+            LoadBalancerArn=self.elb_arn
         )
         [elb_certificates] = [
             listener["Certificates"]
