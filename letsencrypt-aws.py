@@ -28,6 +28,8 @@ CERTIFICATE_EXPIRATION_THRESHOLD = datetime.timedelta(days=45)
 PERSISTENT_SLEEP_INTERVAL = 60 * 60 * 24
 DNS_TTL = 30
 
+CERTIFICATE_CLEAN_UP_THRESHOLD = datetime.timedelta(days=30)
+CERTIFICATE_MIN_COUNT = 5
 
 class Logger(object):
     def __init__(self):
@@ -56,6 +58,33 @@ def _get_iam_certificate(iam_client, certificate_id):
                 return x509.load_pem_x509_certificate(
                     response["ServerCertificate"]["CertificateBody"].encode(),
                     default_backend(),
+                )
+
+def _clean_up_iam_certificates(iam_client):
+    clean_up_date = datetime.datetime.utcnow() + CERTIFICATE_CLEAN_UP_THRESHOLD
+
+    paginator = iam_client.get_paginator("list_server_certificates")
+    pages = paginator.paginate(PaginationConfig={'PageSize': CERTIFICATE_MIN_COUNT + 1})
+
+    # Do not delete any certificate if count is under min threshold
+    if len(page[0]["ServerCertificateMetadataList"]) <= CERTIFICATE_MIN_COUNT:
+        logger.emit(
+            "stop cleaning up iam certificates becasue it's under the min threshold: " + CERTIFICATE_MIN_COUNT, 
+            cert_count=len(page[0]["ServerCertificateMetadataList"])
+        )
+        return
+
+    for page in pages:
+        for server_certificate in page["ServerCertificateMetadataList"]:
+            # Translate a ISO 8601 datetime string into a Python datetime object
+            expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
+            if expiration < clean_up_date:
+                cert_name = server_certificate["ServerCertificateName"]
+                logger.emit(
+                    "updating-iam_client.delete_server_certificate", cert_name=cert_name
+                )
+                response = iam_client.delete_server_certificate(
+                    ServerCertificateName=cert_name,
                 )
 
 
