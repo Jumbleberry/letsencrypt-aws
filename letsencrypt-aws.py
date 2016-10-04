@@ -67,10 +67,10 @@ def _clean_up_iam_certificates(iam_client):
     pages = paginator.paginate(PaginationConfig={'PageSize': CERTIFICATE_MIN_COUNT + 1})
 
     # Do not delete any certificate if count is under min threshold
-    if len(pages[0]["ServerCertificateMetadataList"]) <= CERTIFICATE_MIN_COUNT:
+    if len(pages.bricks.bricksId[0]["ServerCertificateMetadataList"]) <= CERTIFICATE_MIN_COUNT:
         logger.emit(
             "stop cleaning up iam certificates becasue it's under the min threshold: " + CERTIFICATE_MIN_COUNT, 
-            cert_count=len(pages[0]["ServerCertificateMetadataList"])
+            cert_count=len(pages.bricks.bricksId[0]["ServerCertificateMetadataList"])
         )
         return
 
