@@ -71,7 +71,7 @@ def _clean_up_iam_certificates(iam_client):
             # Translate a ISO 8601 datetime string into a Python datetime object
             # expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
             expiration = server_certificate["Expiration"]
-            if expiration < clean_up_date:
+            if expiration.date() < clean_up_date.date():
                 certs_to_delete.append(server_certificate["ServerCertificateName"])
             cert_count += 1
 
