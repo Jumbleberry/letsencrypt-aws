@@ -75,7 +75,7 @@ def _clean_up_iam_certificates(iam_client, logger):
     # Do not delete any certificate if count is under min threshold
     if cert_count <= CERTIFICATE_MIN_COUNT:
         logger.emit(
-            "do not clean up iam certificates becasue it's under the min threshold (" + str(CERTIFICATE_MIN_COUNT) + ")", 
+            "skipping iam certificates clean up becasue it's under threshold (" + str(CERTIFICATE_MIN_COUNT) + ")", 
             current_cert_count=cert_count
         )
         return
