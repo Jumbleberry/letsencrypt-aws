@@ -60,7 +60,7 @@ def _get_iam_certificate(iam_client, certificate_id):
                     default_backend(),
                 )
 
-def _clean_up_iam_certificates(iam_client):
+def _clean_up_iam_certificates(iam_client, logger):
     clean_up_date = datetime.datetime.utcnow() + CERTIFICATE_CLEAN_UP_THRESHOLD
     paginator = iam_client.get_paginator("list_server_certificates")
 
@@ -579,7 +579,7 @@ def update_certificates(persistent=False, force_issue=False):
             force_issue, certificate_requests
         )
 
-    _clean_up_iam_certificates(iam_client)
+    _clean_up_iam_certificates(iam_client, logger)
 
 
 @cli.command()
