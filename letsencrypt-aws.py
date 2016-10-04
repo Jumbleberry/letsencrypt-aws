@@ -575,6 +575,8 @@ def update_certificates(persistent=False, force_issue=False):
             force_issue, certificate_requests
         )
 
+    _clean_up_iam_certificates(iam_client)
+
 
 @cli.command()
 @click.argument("email")
