@@ -68,10 +68,7 @@ def _clean_up_iam_certificates(iam_client, logger):
     cert_count = 0
     for page in paginator.paginate():
         for server_certificate in page["ServerCertificateMetadataList"]:
-            # Translate a ISO 8601 datetime string into a Python datetime object
-            # expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
-            expiration = server_certificate["Expiration"]
-            if expiration.date() < clean_up_date.date():
+            if server_certificate["Expiration"].date() < clean_up_date.date():
                 certs_to_delete.append(server_certificate["ServerCertificateName"])
             cert_count += 1
 
@@ -79,7 +76,7 @@ def _clean_up_iam_certificates(iam_client, logger):
     if cert_count <= CERTIFICATE_MIN_COUNT:
         logger.emit(
             "do not clean up iam certificates becasue it's under the min threshold (" + str(CERTIFICATE_MIN_COUNT) + ")", 
-            cert_count=cert_count
+            current_cert_count=cert_count
         )
         return
 
