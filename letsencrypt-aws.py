@@ -62,32 +62,35 @@ def _get_iam_certificate(iam_client, certificate_id):
 
 def _clean_up_iam_certificates(iam_client):
     clean_up_date = datetime.datetime.utcnow() + CERTIFICATE_CLEAN_UP_THRESHOLD
-
     paginator = iam_client.get_paginator("list_server_certificates")
-    pages = paginator.paginate(PaginationConfig={'PageSize': CERTIFICATE_MIN_COUNT + 1})
 
-    # Do not delete any certificate if count is under min threshold
-    if len(pages.bricks.bricksId[0]["ServerCertificateMetadataList"]) <= CERTIFICATE_MIN_COUNT:
-        logger.emit(
-            "stop cleaning up iam certificates becasue it's under the min threshold: " + CERTIFICATE_MIN_COUNT, 
-            cert_count=len(pages.bricks.bricksId[0]["ServerCertificateMetadataList"])
-        )
-        return
-
-    for page in pages:
+    certs_to_delete = []
+    cert_count = 0
+    for page in paginator.paginate():
         for server_certificate in page["ServerCertificateMetadataList"]:
             # Translate a ISO 8601 datetime string into a Python datetime object
             expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
             if expiration < clean_up_date:
-                cert_name = server_certificate["ServerCertificateName"]
-                logger.emit(
-                    "updating-iam_client.delete_server_certificate", cert_name=cert_name
-                )
-                response = iam_client.delete_server_certificate(
-                    ServerCertificateName=cert_name,
-                )
+                certs_to_delete.append(server_certificate["ServerCertificateName"])
+            cert_count += 1
 
+    # Do not delete any certificate if count is under min threshold
+    if cert_count <= CERTIFICATE_MIN_COUNT:
+        logger.emit(
+            "do not clean up iam certificates becasue it's under the min threshold: " + CERTIFICATE_MIN_COUNT, 
+            cert_count=cert_count
+        )
+        return
 
+    for cert_name in certs_to_delete:
+        logger.emit(
+            "updating-iam_client.delete_server_certificate", cert_name=cert_name
+        )
+        response = iam_client.delete_server_certificate(
+            ServerCertificateName=cert_name,
+        )
+        
+        
 class CertificateRequest(object):
     def __init__(self, cert_location, dns_challenge_completer, hosts,
                  key_type):
