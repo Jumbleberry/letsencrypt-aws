@@ -69,7 +69,8 @@ def _clean_up_iam_certificates(iam_client):
     for page in paginator.paginate():
         for server_certificate in page["ServerCertificateMetadataList"]:
             # Translate a ISO 8601 datetime string into a Python datetime object
-            expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
+            # expiration = datetime.datetime.strptime(server_certificate["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
+            expiration = server_certificate["Expiration"]
             if expiration < clean_up_date:
                 certs_to_delete.append(server_certificate["ServerCertificateName"])
             cert_count += 1
@@ -90,7 +91,7 @@ def _clean_up_iam_certificates(iam_client):
             ServerCertificateName=cert_name,
         )
         
-        
+
 class CertificateRequest(object):
     def __init__(self, cert_location, dns_challenge_completer, hosts,
                  key_type):
