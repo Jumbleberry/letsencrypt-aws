@@ -6,7 +6,7 @@ import time
 
 import acme.challenges
 import acme.client
-import acme.jose
+import josepy
 
 import click
 
@@ -44,6 +44,7 @@ class Logger(object):
             event,
             formatted_data
         ))
+        self._out.flush()
 
 
 def _get_iam_certificate(iam_client, certificate_id):
@@ -356,7 +357,7 @@ def complete_dns_challenge(logger, acme_client, dns_challenge_completer,
 def request_certificate(logger, acme_client, elb_arn, authorizations, csr):
     logger.emit("updating-elb.request-cert", elb_arn=elb_arn)
     cert_response, _ = acme_client.poll_and_request_issuance(
-        acme.jose.util.ComparableX509(
+        josepy.util.ComparableX509(
             OpenSSL.crypto.load_certificate_request(
                 OpenSSL.crypto.FILETYPE_ASN1,
                 csr.public_bytes(serialization.Encoding.DER),
@@ -497,8 +498,8 @@ def setup_acme_client(s3_client, acme_directory_url, acme_account_key):
 
 def acme_client_for_private_key(acme_directory_url, private_key):
     return acme.client.Client(
-        # TODO: support EC keys, when acme.jose does.
-        acme_directory_url, key=acme.jose.JWKRSA(key=private_key)
+        # TODO: support EC keys, when josepy does.
+        acme_directory_url, key=josepy.JWKRSA(key=private_key)
     )
 
 
